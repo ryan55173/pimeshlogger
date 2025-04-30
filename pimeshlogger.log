@@ -1,0 +1,14 @@
+20250429-15:19:42 :: DEBUG :: Process is already running
+20250429-15:23:03 :: DEBUG :: Process is already running
+20250429-15:25:20 :: DEBUG :: Running normal mode
+20250429-15:25:20 :: DEBUG :: Meshtastic daemon is running
+20250429-15:25:24 :: DEBUG :: Exiting main_loop...
+20250429-15:25:25 :: DEBUG :: Closed meshtastic interface
+20250429-15:27:13 :: DEBUG :: Running normal mode
+20250429-15:27:13 :: DEBUG :: Meshtastic daemon is running
+20250429-15:27:17 :: DEBUG :: Exiting main_loop...
+20250429-15:27:18 :: DEBUG :: Closed meshtastic interface
+20250430-02:07:09 :: DEBUG :: Running normal mode
+20250430-02:07:10 :: DEBUG :: Meshtastic daemon is running
+20250430-02:07:30 :: DEBUG :: Exiting main_loop...
+20250430-02:07:31 :: DEBUG :: Closed meshtastic interface
