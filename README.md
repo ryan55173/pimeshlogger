@@ -13,6 +13,5 @@ A python script or daemon for logging messages from a Meshtastic node
 
 ```
 python3 -m pip install meshtastic psutil argparse
-
 ```
 
