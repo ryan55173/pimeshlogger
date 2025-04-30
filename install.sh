@@ -83,3 +83,6 @@ systemctl daemon-reload
 systemctl enable pimeshlogger.service
 systemctl start pimeshlogger.service
 
+## Show finished
+systemctl status pimeshlogger
+
