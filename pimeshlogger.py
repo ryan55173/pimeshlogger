@@ -3,6 +3,7 @@ import os
 # import sys
 # import json
 import time
+import fcntl
 import psutil
 import logging
 import argparse
@@ -13,9 +14,6 @@ from enum import Enum
 from pubsub import pub
 import meshtastic.tcp_interface
 from logging.handlers import RotatingFileHandler
-
-
-# TODO: Log rotation by filesize / datetime
 
 
 ######################
@@ -30,12 +28,24 @@ else:
 if not os.path.exists(log_dir):
     os.makedirs(log_dir, exist_ok=True)
 program_log = log_dir + '/pimeshlogger.log'
+program_log_init = open(program_log, 'a')
+try:
+    fcntl.flock(program_log_init, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    print(f'Cannot aquire file lock for - {program_log}')
+program_log_init.close()
 mesh_message_log = log_dir + '/mesh-messages.log'
-## Program log initialization
+mesh_message_log_init = open(mesh_message_log, 'a')
+try:
+    fcntl.flock(mesh_message_log_init, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    print(f'Cannot aquire file lock for - {mesh_message_log}')
+mesh_message_log_init.close()
+
+## Program logger initialization
 p_logger = logging.getLogger('pimesh_logger')
 p_logger.setLevel(logging.DEBUG)
 p_formatter = logging.Formatter('%(asctime)s :: %(levelname)s :: %(message)s', '%Y%m%d-%H:%M:%S')
-# p_file_handler = logging.FileHandler(program_log)
 p_file_handler = RotatingFileHandler(program_log, maxBytes=8_000_000, backupCount=8)
 p_file_handler.setLevel(logging.DEBUG)
 p_file_handler.setFormatter(p_formatter)
@@ -44,10 +54,7 @@ p_console_handler.setLevel(logging.DEBUG)
 p_console_handler.setFormatter(p_formatter)
 p_logger.addHandler(p_file_handler)
 p_logger.addHandler(p_console_handler)
-## Message log initialization
-if not os.path.exists(mesh_message_log):
-    mml = open(mesh_message_log, 'x')
-    mml.close()
+
 ## Argument parser initialization
 parser = argparse.ArgumentParser(prog='pimeshlogger')
 parser.add_argument('-r', '--respond', action='store_true', help='Run with automated text message responses')
@@ -220,34 +227,6 @@ def on_receive(packet, interface):
 
 ## Added as a callback for receiving a meshtastic packet
 def on_receive_respond(packet, interface):
-    # Ignore by portnum in packet (type of message)
-    ignore_list = [
-        'UNKNOWN_APP',
-        'REMOTE_HARDWARE_APP',
-        'POSITION_APP',
-        'NODEINFO_APP',
-        'ROUTING_APP',
-        'ADMIN_APP',
-        'WAYPOINT_APP',
-        'AUDIO_APP',
-        'DETECTION_SENSOR_APP',
-        'REPLY_APP',
-        'IP_TUNNEL_APP',
-        'PAXCOUNTER_APP',
-        'SERIAL_APP',
-        'STORE_FORWARD_APP',
-        'RANGE_TEST_APP',
-        'TELEMETRY_APP',
-        'ZPS_APP',
-        'SIMULATOR_APP',
-        'TRACEROUTE_APP',
-        'NEIGHBORINFO_APP',
-        'ATAK_PLUGIN',
-        'MAP_REPORT_APP',
-        'POWERSTRESS_APP',
-        'PRIVATE_APP',
-        'ATAK_FORWARDER'
-    ]
     # Decode packet
     received_packet = str(packet)
     received_packet = received_packet.replace('\r', '')
