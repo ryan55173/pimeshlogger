@@ -7,7 +7,7 @@
 ## File paths
 script_working_dir="/usr/local/src"
 script_path="$script_working_dir/pimeshlogger.py"
-wrapper_path="/usr/local/bin/pymeshlogger"
+wrapper_path="/usr/local/bin/pimeshlogger"
 log_dir="/var/log/pimeshlogger"
 daemon_file_path="/etc/systemd/system/pimeshlogger.service"
 program_log_path="$log_dir/pimeshlogger.log"
