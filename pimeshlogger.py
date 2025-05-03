@@ -1,9 +1,10 @@
 #!/bin/python3
 import os
 # import sys
-# import json
+# import glob
+import json
 import time
-import fcntl
+# import fcntl
 import psutil
 import logging
 import argparse
@@ -16,77 +17,7 @@ import meshtastic.tcp_interface
 from logging.handlers import RotatingFileHandler
 
 
-######################
-### Initialization ###
-######################
-
-## File initialization
-if os.geteuid() == 0:    
-    log_dir = '/var/log/pimeshlogger'
-else:
-    log_dir = os.path.expanduser('~') + os.path.sep + 'pimeshlogger'
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir, exist_ok=True)
-program_log = log_dir + '/pimeshlogger.log'
-program_log_init = open(program_log, 'a')
-try:
-    fcntl.flock(program_log_init, fcntl.LOCK_EX | fcntl.LOCK_NB)
-except BlockingIOError:
-    print(f'Cannot aquire file lock for - {program_log}')
-program_log_init.close()
-mesh_message_log = log_dir + '/mesh-messages.log'
-mesh_message_log_init = open(mesh_message_log, 'a')
-try:
-    fcntl.flock(mesh_message_log_init, fcntl.LOCK_EX | fcntl.LOCK_NB)
-except BlockingIOError:
-    print(f'Cannot aquire file lock for - {mesh_message_log}')
-mesh_message_log_init.close()
-
-## Program logger initialization
-p_logger = logging.getLogger('pimesh_logger')
-p_logger.setLevel(logging.DEBUG)
-p_formatter = logging.Formatter('%(asctime)s :: %(levelname)s :: %(message)s', '%Y%m%d-%H:%M:%S')
-p_file_handler = RotatingFileHandler(program_log, maxBytes=8_000_000, backupCount=8)
-p_file_handler.setLevel(logging.DEBUG)
-p_file_handler.setFormatter(p_formatter)
-p_console_handler = logging.StreamHandler()
-p_console_handler.setLevel(logging.DEBUG)
-p_console_handler.setFormatter(p_formatter)
-p_logger.addHandler(p_file_handler)
-p_logger.addHandler(p_console_handler)
-
-## Argument parser initialization
-parser = argparse.ArgumentParser(prog='pimeshlogger')
-parser.add_argument('-r', '--respond', action='store_true', help='Run with automated text message responses')
-parser.add_argument('--clear-data', action='store_true', help='Clears both messages and logs')
-parser.add_argument('--clear-logs', action='store_true', help='Clear program logs')
-parser.add_argument('--clear-messages', action='store_true', help='Clear meshtastic messages')
-
-## Check if this is already running
-name_fragment = 'pimeshlogger'
-name_found = False
-current_pid = os.getpid()
-for proc in psutil.process_iter(['pid', 'cmdline']):
-    try:
-        if proc.info['pid'] == current_pid:
-            # Skip this exact process while looking
-            continue
-        cmdline = ' '.join(proc.info.get('cmdline', []))
-        if name_fragment in cmdline:
-            print(cmdline)
-            name_found = True
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        continue
-if name_found:
-    p_logger.debug('Process is already running')
-    exit(0)
-
-
-############
-### Code ###
-############
-
-## portnum in the packet object, list of special port numbers for meshtastic
+## enum for portnum in the packet object, list of special port numbers for meshtastic
 class MeshPortNum(Enum):
     UNKNOWN_APP = 0
 	# A simple UTF-8 text message, which even the little micros in the mesh
@@ -197,6 +128,26 @@ class MeshPortNum(Enum):
 	# Currently we limit port nums to no higher than this value
     MAX = 511
 
+
+## Create config
+def get_pimeshlogger_config():
+    ## Create default config if it does not exist
+    default_config = {
+        "response": "none",
+        "response_channel": 1
+    }
+    if not os.path.exists(config_path):    
+        json_file = open(config_path, 'w')
+        json.dump(default_config, json_file, indent=4)
+        json_file.close()
+        return default_config
+    ## Read config file
+    else:
+        json_file = open(config_path, 'r')
+        cfg = json.load(json_file)
+        json_file.close()
+        return cfg
+
 ## To see if meshtasticd.service is running
 def is_meshtasticd_running():
     try:
@@ -210,6 +161,40 @@ def is_meshtasticd_running():
     except Exception as e:
         p_logger.error(f'Error checking process: {e}')
         return False
+
+## See if this proces is running anywhere
+def is_this_running():
+    running = False
+    current_pid = os.getpid()
+    for proc in psutil.process_iter(['pid', 'cmdline']):
+        try:
+            if proc.info['pid'] == current_pid:
+                continue
+            cmdline = ' '.join(proc.info.get('cmdline', []))
+            if 'pimeshlogger' in cmdline:
+                pid_str = str(proc.info['pid'])
+                p_logger.warning(f'Clone process found - PID: {pid_str}')
+                running = True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return running
+
+## Kill other instances of same process
+def kill_clones():
+    clones_killed = False
+    current_pid = os.getpid()
+    for proc in psutil.process_iter(['pid', 'cmdline']):
+        try:
+            if proc.info['pid'] == current_pid:
+                continue
+            cmdline = ' '.join(proc.info.get('cmdline', []))
+            if 'pimeshlogger' in cmdline:
+                p_logger.warning('Clone process found - ' + str(proc.info['pid']) + '\r\n\tKilling...')
+                proc.kill()
+                clones_killed = True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return clones_killed
 
 ## Added as a callback for receiving a meshtastic packet
 def on_receive(packet, interface):
@@ -249,11 +234,52 @@ def on_receive_respond(packet, interface):
         interface.sendText(str(text_out), channelIndex=1)
 
 
+######################
+### Initialization ###
+######################
+
+## File initialization
+if os.geteuid() == 0:    
+    log_dir = '/var/log/pimeshlogger'
+    config_path = '/usr/local/etc/pimeshlogger.json'
+else:
+    log_dir = os.path.expanduser('~') + os.path.sep + 'pimeshlogger'
+    config_path = os.path.expanduser('~') + os.path.sep + 'pimeshlogger/pimeshlogger.json'
+program_log = log_dir + '/pimeshlogger.log'
+mesh_message_log = log_dir + '/mesh-messages.log'
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir, exist_ok=True)
+
+## Program logger initialization
+p_logger = logging.getLogger('pimesh_logger')
+p_logger.setLevel(logging.DEBUG)
+p_formatter = logging.Formatter('%(asctime)s :: %(levelname)s :: %(message)s', '%Y%m%d-%H:%M:%S')
+p_file_handler = RotatingFileHandler(program_log, maxBytes=8_000_000, backupCount=2)
+p_file_handler.setLevel(logging.DEBUG)
+p_file_handler.setFormatter(p_formatter)
+p_console_handler = logging.StreamHandler()
+p_console_handler.setLevel(logging.DEBUG)
+p_console_handler.setFormatter(p_formatter)
+p_logger.addHandler(p_file_handler)
+p_logger.addHandler(p_console_handler)
+
+## Argument parser initialization
+parser = argparse.ArgumentParser(prog='pimeshlogger')
+parser.add_argument('-c', '--channel', type=int, help='Select channel to respond on')
+parser.add_argument('-r', '--response', type=str, help='Run with automated text message responses')
+parser.add_argument('--clear', type=str, help='Clearing logs ->  --clear: [option] -> Options:[all,logs,messages]')
+
+
 ############
 ### Main ###
 ############
 
-def main_loop(interface):
+def main_loop(config):
+    if config['response'] in ['none', 'null', 'default']:
+        pub.subscribe(on_receive, 'meshtastic.receive')
+    else:
+        pub.subscribe(on_receive_respond, 'meshtastic.receive')
+    interface = meshtastic.tcp_interface.TCPInterface(hostname='127.0.0.1')
     try:
         while True:
             time.sleep(10)
@@ -263,58 +289,25 @@ def main_loop(interface):
     p_logger.debug('Closed meshtastic interface')
 
 if __name__ == '__main__':
+    ## Get args and kill clones
     args = parser.parse_args()
-    if not any(vars(args).values()):
-        p_logger.debug('Running normal mode')
-        if not is_meshtasticd_running():
-            exit(1)
-        # Add callback and create interface
-        pub.subscribe(on_receive, 'meshtastic.receive')
-        interface = meshtastic.tcp_interface.TCPInterface(hostname='127.0.0.1')
-        # Loop then exit
-        main_loop(interface)
-    # Respond to texts (default)    
-    elif args.respond:
-        # TODO: Add more options for this and better responses
-        p_logger.debug('Running with responses')
-        if not is_meshtasticd_running():
-            exit(1)
-        # Add callback and create interface
-        pub.subscribe(on_receive_respond, "meshtastic.receive")
-        interface = meshtastic.tcp_interface.TCPInterface(hostname='127.0.0.1')
-        # Loop then exit
-        main_loop(interface)
-    # Clear data argument (clears messages and logs)
-    elif args.clear_data:
-        p_logger.warning('Clearing both logs and message')
-        try:
-            msg_file = open(mesh_message_log, 'w')
-            msg_file.close()
-        except PermissionError as e:
-            p_logger.error(f'Could not clear messages - {e}')
-        try:
-            log_file = open(program_log, 'w')
-            log_file.close()
-        except PermissionError as e:
-            p_logger.error(f'Could not clear program log - {e}')
-    # Clear logs argument
-    elif args.clear_logs:
-        p_logger.warning('Clearing log files')
-        try:
-            log_file = open(program_log, 'w')
-            log_file.close()
-        except PermissionError as e:
-            p_logger.error(f'Could not clear program log - {e}')
-    # Clear messages argument
-    elif args.clear_messages:
-        p_logger.warning('Clearing messages')
-        try:
-            msg_file = open(mesh_message_log, 'w')
-            msg_file.close()
-        except PermissionError as e:
-            p_logger.error(f'Could not clear messages - {e}')
-    # Unknown arguments
-    else:
-        p_logger.error('Attempted to parse unknown arguments')
-        exit(0)
+    config = get_pimeshlogger_config()
+    kill_clones()
+    ## args - Clear files
+    if args.clear != None:
+        clear_lower = args.clear.lower()
+        if clear_lower in ['*', 'all', 'log', 'logs', 'program_log', 'program_logs']:
+            for file in os.listdir(log_dir):
+                if 'pimeshlogger' in file:
+                    os.remove(file)
+        if clear_lower in ['*', 'all', 'message', 'messages', 'text', 'texts']:
+            os.remove(log_dir + 'mesh-messages.log')
+    ## args - Response type
+    if args.response != None:
+        resp_lower = args.response.lower()
+        if resp_lower in ['rssi']:
+            config['response'] = 'rssi'
+        json.dump(config, config_path, indent=4)
+    ## Main
+    main_loop(config)
 
