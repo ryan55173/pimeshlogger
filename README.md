@@ -4,11 +4,11 @@ A python script or daemon for logging messages from a Meshtastic node
 
 ## Usage
 
-<pre>
+```
 - -h, --help        ->    Show help
 - -c, --channel     ->    Set channel for responses (int)
 - -r, --respond     ->    Turn responses on/off
-</pre>
+```
 
 ## Requirements
 
