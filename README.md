@@ -5,9 +5,9 @@ A python script or daemon for logging messages from a Meshtastic node
 ## Usage
 
 ```
-- -h, --help        ->    Show help
-- -c, --channel     ->    Set channel for responses (int)
-- -r, --respond     ->    Turn responses on/off
+-h, --help        ->    Show help
+-c, --channel     ->    Set channel for responses (int)
+-r, --respond     ->    Turn responses on/off
 ```
 
 ## Requirements
