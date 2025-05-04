@@ -133,8 +133,8 @@ class MeshPortNum(Enum):
 def get_pimeshlogger_config():
     ## Create default config if it does not exist
     default_config = {
-        "response": "none",
-        "response_channel": 1
+        "channel": 0,
+        "respond": True,
     }
     if not os.path.exists(config_path):    
         json_file = open(config_path, 'w')
@@ -231,7 +231,7 @@ def on_receive_respond(packet, interface):
         if not node:
             node = from_node_id
         text_out = f'Message received from - {str(node)}\nRSSI: {str(rxRssi)}'
-        interface.sendText(str(text_out), channelIndex=1)
+        interface.sendText(str(text_out), channelIndex=0)
 
 
 ######################
@@ -266,7 +266,7 @@ p_logger.addHandler(p_console_handler)
 ## Argument parser initialization
 parser = argparse.ArgumentParser(prog='pimeshlogger')
 parser.add_argument('-c', '--channel', type=int, help='Select channel to respond on')
-parser.add_argument('-r', '--response', type=str, help='Run with automated text message responses')
+parser.add_argument('-r', '--respond', action='store_true', help='Turn on/off responses')
 parser.add_argument('--clear', type=str, help='Clearing logs ->  --clear: [option] -> Options:[all,logs,messages]')
 
 
@@ -289,10 +289,24 @@ def main_loop(config):
     p_logger.debug('Closed meshtastic interface')
 
 if __name__ == '__main__':
-    ## Get args and kill clones
+    ## Get args and kill clones (other threads)
     args = parser.parse_args()
     config = get_pimeshlogger_config()
     kill_clones()
+
+    ## args - Channel
+    if args.channel != None:
+        config['channel'] = args.channel
+        p_logger.debug(f'Set channel to {str(args.channel)}')
+    ## args - Respond true/false
+    if args.respond:
+        ## Toggle
+        if config.respond:
+            config.respond = False
+            p_logger.debug('Respond toggled to false')
+        else:
+            config.respond = True
+            p_logger.debug('Respond toggled to true')
     ## args - Clear files
     if args.clear != None:
         clear_lower = args.clear.lower()
@@ -302,12 +316,14 @@ if __name__ == '__main__':
                     os.remove(file)
         if clear_lower in ['*', 'all', 'message', 'messages', 'text', 'texts']:
             os.remove(log_dir + 'mesh-messages.log')
-    ## args - Response type
-    if args.response != None:
-        resp_lower = args.response.lower()
-        if resp_lower in ['rssi']:
-            config['response'] = 'rssi'
-        json.dump(config, config_path, indent=4)
-    ## Main
+
+    ## Write new config and run
+    json.dump(config, config_path, indent=4)
+    
+    if config.respond:
+        # TODO: Build response message
+        pass
+    else:
+        pass
     main_loop(config)
 
